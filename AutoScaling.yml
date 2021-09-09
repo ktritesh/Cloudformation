@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template will create two AutoScalingGroup i.e. FrontendAutoScaling and BackendAutoScaling Group with Simple Scaling Policy for Public Subnet and Private subnet
+
+Parameters:
+  ImageId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  LaunchTemplateVersionNumber:
+    Type: String
+
+Resources:
+# Create Public Auto Scaling Group        
+  PublicAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PublicLaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      AvailabilityZones: 
+        - !Select [ 0, !GetAZs '' ]
+        
+#Create Public Launch Template
+  PublicLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        ImageId: !Ref ImageId
+        InstanceType: t2.micro
+
+# Create Simple Scaling Policy for Public Auto Scaling Group
+  SimpleScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PublicAutoScalingGroup
+      ScalingAdjustment: 1
+
+#Create Private Launch Template
+  PrivateLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        ImageId: !Ref ImageId
+        InstanceType: t2.micro  
+
+# Create Private Auto Scaling Group        
+  PrivateAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PrivateLaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      AvailabilityZones: 
+        - !Select [ 1, !GetAZs '' ]
+
+# Create Simple Scaling Policy for Private Auto Scaling Group
+  SimpleScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PrivateAutoScalingGroup
+      ScalingAdjustment: 1

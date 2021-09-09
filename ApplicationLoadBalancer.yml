@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template will create Internal and Internet-Facing Application Load Balancer and also create Listner and Target group for both Application Load balancer.
+
+Metadata:
+  AWS::CloudFormation::Interface: 
+    ParameterGroups:
+      - 
+        Label: 
+          default: "Certificate Arn"
+        Parameters:
+          - AcmCertificate
+
+Resources:
+#Create an Internet-Facing Application Load Balancer
+  PublicApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PublicApplicationLoadBalancer
+      SecurityGroups:
+        - Ref: PublicSecurityGroup
+      Subnets: 
+        - Ref: PublicSubnet
+        - Ref: PrivateSubnet
+
+#Create a Listener on Port 80
+  PublicALBListenerNoSslCertificate:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect 
+      LoadBalancerArn: !Ref PublicApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+# Create a Public ALB Target Group
+  PublicALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: PublicALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Ref: VPC
+
+#Create an Internal Application Load Balancer
+  PrivateApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PrivateApplicationLoadBalancer
+      SecurityGroups:
+        - Ref: PrivateSecurityGroup
+      Subnets: 
+        - Ref: PublicSubnet
+        - Ref: PrivateSubnet
+
+#Create a Listener on Port 80
+  PrivateALBListenerNoSslCertificate:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect 
+      LoadBalancerArn: !Ref PrivateApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+# Create a Private ALB Target Group
+  PrivateALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: PrivateALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Ref: VPC

@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template will create Ec2 t2.micro instance with EBS volume in Public and private Subnet
+
+Resources:
+# Create Public Instance in Public Subnet
+  PublicInstance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: ami-0747bdcabd34c712a
+      KeyName: ubuntu
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref PublicSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      BlockDeviceMappings: 
+      - DeviceName: /dev/sda1
+        Ebs: 
+          VolumeType: gp2
+          DeleteOnTermination: true
+          VolumeSize: 8
+      Tags:
+        - Key: Name
+          Value: Public Instance
+
+# Create Private Instance in Private Subnet
+  PrivateInstance: 
+    Type: AWS::EC2::Instance
+    Properties: 
+      ImageId: ami-0747bdcabd34c712a
+      KeyName: ubuntu
+      InstanceType: t2.micro
+      SecurityGroupIds: 
+        - !Ref PrivateSecurityGroup
+      SubnetId: !Ref PrivateSubnet
+      BlockDeviceMappings: 
+      - DeviceName: /dev/sda1
+        Ebs: 
+          VolumeType: gp2
+          DeleteOnTermination: true
+          VolumeSize: 8
+      Tags:
+        - Key: Name
+          Value: Private Instance

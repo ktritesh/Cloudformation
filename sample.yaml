@@ -1,0 +1,369 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AutoScaling template for fundoo-chat
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Environment
+      Parameters:
+        - EnvironmentType
+    - Label:
+        default: Network Configuration
+      Parameters:
+      - VPCID
+      - PublicSubnet1Id
+      - PublicSubnet2Id
+      - PrivateSubnet1Id
+      - PrivateSubnet2Id
+      - BastionSecurityGroup
+      - ALBAccessCIDR
+    - Label:
+        default: App Instance Configuration
+      Parameters:
+      - ServerInstanceType
+      - KeyPairName
+    ParameterLabels:
+      VPCID:
+        default: vpc-0b821e2391f46e3c3
+      PublicSubnet1Id:
+        default: subnet-0ec0021c9c6497aef
+      Publicsubnet2Id:
+        default: subnet-0fa5df9a419bb4a97
+      PrivateSubnet1Id:
+        default: subnet-0ec87c7c786757327
+      Privatesubnet2Id:
+        default: subnet-00491362529acc2ca
+      KeyPairName:
+        default: app
+      ALBAccessCIDR:
+        default: ALB access CIDR
+      ServerInstanceType:
+        default: t2.micro
+      EnvironmentType:
+        default: Environment Type
+Parameters:
+  VPCID:
+    Description: A VPC ID
+    Type: String
+  PublicSubnet1Id:
+    Description: public DMZ subnet 1 ID located in Availability Zone 1
+    Type: String
+  PublicSubnet2Id:
+    Description: public DMZ subnet 2 ID located in Availability Zone 2
+    Type: String
+  PrivateSubnet1Id:
+    Description: private DMZ subnet 1 ID located in Availability Zone 1
+    Type: String
+  PrivateSubnet2Id:
+    Description: private DMZ subnet 2 ID located in Availability Zone 2
+    Type: String
+  frontSecurityGroup:
+    Description: Bastion security group ID
+    Type: String
+  BackSecurityGroup:
+    Description: Bastion security group ID
+    Type: String
+  KeyPairName: 
+    Description: Amazon EC2 Key Pair
+    Type: "AWS::EC2::KeyPair::KeyName"
+    ConstraintDescription: must be a valid Key Pair
+  ALBAccessCIDR:
+    Description: ALB access CIDR
+    Type: String
+    Default: 0.0.0.0/0
+    ConstraintDescription: must be a valid Certificate ARN
+  InstanceType:
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - c4.large
+    - c4.xlarge
+    - c4.2xlarge
+    - c4.4xlarge
+    - c4.8xlarge
+    - c3.large
+    - c3.xlarge
+    - c3.2xlarge
+    - c3.4xlarge
+    - c3.8xlarge
+    - r3.large
+    - r3.xlarge
+    - r3.2xlarge
+    - r3.4xlarge
+    - r3.8xlarge
+    - i2.xlarge
+    - i2.2xlarge
+    - i2.4xlarge
+    - i2.8xlarge
+    ConstraintDescription: Choose an instance type.
+    Default: t2.micro
+    Description: App node node instance type
+    Type: String
+  EnvironmentType: 
+      Description: The environment type
+      Type: String
+      Default: dev
+      AllowedValues: 
+        - prod
+        - dev
+      ConstraintDescription: must be a prod or dev
+      
+Resources:
+  PrivateHostSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable SSH access via port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref BackSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Ref BackALBSG
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          SourceSecurityGroupId: !Ref BackALBSG
+      Tags:
+        - Key: Name
+          Value: BackSG
+  BackAppLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: ami-07c80d7c1228fd368
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+        - !Ref PrivateHostSecurityGroup         
+  BackAppASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      DesiredCapacity: 1
+      LaunchConfigurationName: !Ref BackAppLaunchConfig
+      TargetGroupARNs:
+        - !Ref BackTargetGroup
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+          - Key: Name
+            Value: BackASG
+            PropagateAtLaunch: True
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: True
+  AppScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref BackAppASG
+      Cooldown: '60'
+      ScalingAdjustment: 1
+  AppScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref BackAppASG
+      Cooldown: '300'
+      ScalingAdjustment: -1
+
+  BackALBSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable HTTP access
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: !Ref ALBAccessCIDR
+      Tags:
+        - Key: Name
+          Value: BackALBSG
+  BackAppALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internal
+      SecurityGroups:
+        - !Ref BackALBSG
+      Subnets:
+        - !Ref PrivateSubnet1Id
+        - !Ref PrivateSubnet2Id
+      Tags:
+        - Key: Name
+          Value: BackALB
+      Type: application
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: BackTargetGroup
+      LoadBalancerArn:
+        Ref: BackAppALB
+      Port: '80'
+      Protocol: HTTP
+  BackTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: '8000'
+      Protocol: 'HTTP'
+      VpcId: !Ref VPCID
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 8000
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: BackAppTG
+  PublicHostSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable SSH access via port 22
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          SourceSecurityGroupId: !Ref frontSecurityGroup
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          SourceSecurityGroupId: !Ref frontALBSG
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          SourceSecurityGroupId: !Ref frontALBSG
+      Tags:
+        - Key: Name
+          Value: frontSG
+  frontAppLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: ami-037bbc1a51846289e
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      SecurityGroups:
+        - !Ref PublicHostSecurityGroup         
+  frontAppASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+      DesiredCapacity: 1
+      LaunchConfigurationName: !Ref frontAppLaunchConfig
+      TargetGroupARNs:
+        - !Ref frontTargetGroup
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+          - Key: Name
+            Value: frontASG
+            PropagateAtLaunch: True
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: True
+  AppScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref frontAppASG
+      Cooldown: '60'
+      ScalingAdjustment: 1
+  AppScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref frontAppASG
+      Cooldown: '300'
+      ScalingAdjustment: -1
+
+  frontALBSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref VPCID
+      GroupDescription: Enable HTTP access
+      SecurityGroupIngress:
+        - IpProtocol: 'tcp'
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: !Ref ALBAccessCIDR
+      Tags:
+        - Key: Name
+          Value: frontALBSG
+  frontAppALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref frontALBSG
+      Subnets:
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+      Tags:
+        - Key: Name
+          Value: frontALB
+      Type: application
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: frontTargetGroup
+      LoadBalancerArn:
+        Ref: frontAppALB
+      Port: '80'
+      Protocol: HTTP
+  frontTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: '80'
+      Protocol: 'HTTP'
+      VpcId: !Ref VPCID
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: 80
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Tags:
+        - Key: Name
+          Value: frontAppTG
+Outputs:
+  BackALBDNS:
+    Description: Web App ALB DNS Name 
+    Value:
+      Fn::Join:
+        - ''
+        - - "http://"
+          - Fn::GetAtt: BackAppALB.DNSName
+  frontALBDNS:
+    Description: Web App ALB DNS Name 
+    Value:
+      Fn::Join:
+        - ''
+        - - "http://"
+          - Fn::GetAtt: frontAppALB.DNSName

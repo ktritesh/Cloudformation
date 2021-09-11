@@ -1,0 +1,284 @@
+
+#Create Public Launch Template
+  PublicLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        ImageId: !Ref ImageId
+        InstanceType: t2.micro
+
+# Create Public Auto Scaling Group        
+  PublicAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PublicLaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      AvailabilityZones: 
+        - !Select [ 0, !GetAZs '' ]
+
+# Create Simple Scaling Policy for Public Auto Scaling Group
+  SimpleScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PublicAutoScalingGroup
+      ScalingAdjustment: 1
+
+#Create Private Launch Template
+  PrivateLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        ImageId: !Ref ImageId
+        InstanceType: t2.micro  
+
+# Create Private Auto Scaling Group        
+  PrivateAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PrivateLaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      AvailabilityZones: 
+        - !Select [ 1, !GetAZs '' ]
+
+# Create Simple Scaling Policy for Private Auto Scaling Group
+  SimpleScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PrivateAutoScalingGroup
+      ScalingAdjustment: 1
+
+#Create an Internet-Facing Application Load Balancer
+  PublicApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PublicApplicationLoadBalancer
+      SecurityGroups:
+        - Ref: PublicSecurityGroup
+      Subnets: 
+        - Ref: PublicSubnet
+        - Ref: PrivateSubnet
+
+#Create a Listener on Port 80
+  PublicALBListenerNoSslCertificate:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect 
+      LoadBalancerArn: !Ref PublicApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+# Create a Public ALB Target Group
+  PublicALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: PublicALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Ref: VPC
+
+#Create an Internal Application Load Balancer
+  PrivateApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PrivateApplicationLoadBalancer
+      SecurityGroups:
+        - Ref: PrivateSecurityGroup
+      Subnets: 
+        - Ref: PublicSubnet
+        - Ref: PrivateSubnet
+
+#Create a Listener on Port 80
+  PrivateALBListenerNoSslCertificate:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect 
+      LoadBalancerArn: !Ref PrivateApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+# Create a Private ALB Target Group
+  PrivateALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: PrivateALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Ref: VPC
+
+
+  
+
+  PublicImageId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: 'AWS::EC2::Image::ami-0de8fac4ababecf19'
+  PublicLaunchTemplateVersionNumber:
+    Type: String
+
+  PrivateImageId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: 'AWS::EC2::Image::ami-087c7312cd2b30666'
+  PrivateLaunchTemplateVersionNumber:
+    Type: String
+
+ Parameters:
+  ImageId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: ami-0de8fac4ababecf19
+  LaunchTemplateVersionNumber:
+    Type: String
+
+Parameters:
+  ImageId:
+    Description: Region specific image from the Parameter Store
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: ami-0de8fac4ababecf19
+  LaunchTemplateVersionNumber:
+    Type: String
+
+Resources:
+# Create Public Auto Scaling Group        
+  PublicAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PublicLaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      AvailabilityZones: 
+        - !Select [ 0, !GetAZs '' ]
+        
+#Create Public Launch Template
+  PublicLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        ImageId: !Ref ImageId
+        InstanceType: t2.micro
+
+# Create Simple Scaling Policy for Public Auto Scaling Group
+  SimpleScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PublicAutoScalingGroup
+      ScalingAdjustment: 1
+
+#Create Private Launch Template
+  PrivateLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties: 
+      LaunchTemplateData: 
+        CreditSpecification: 
+          CpuCredits: Unlimited
+        ImageId: !Ref ImageId
+        InstanceType: t2.micro  
+
+# Create Private Auto Scaling Group        
+  PrivateAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      MaxSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PrivateLaunchTemplate
+        Version: !Ref LaunchTemplateVersionNumber
+      AvailabilityZones: 
+        - !Select [ 1, !GetAZs '' ]
+
+# Create Simple Scaling Policy for Private Auto Scaling Group
+  SimpleScalingPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PrivateAutoScalingGroup
+      ScalingAdjustment: 1
+
+# Create Public Launch Configuration
+  PublicLaunchConfiguration:
+  Type: AWS::AutoScaling::LaunchConfiguration
+  Properties:
+    AssociatePublicIpAddress: true
+    ImageId: ami-0de8fac4ababecf19
+    LaunchConfigurationName: PublicLaunchConfiguration
+    SecurityGroups:
+      - Ref: PublicSecurityGroup
+      - Public Security Group2
+    InstanceType: t2.micro
+
+# Create Private Launch Configuration
+  PrivateLaunchConfiguration:
+  Type: AWS::AutoScaling::LaunchConfiguration
+  Properties:
+    AssociatePublicIpAddress: false
+    ImageId: ami-087c7312cd2b30666
+    LaunchConfigurationName: PrivateLaunchConfiguration
+    SecurityGroups:
+      - Ref: PrivateSecurityGroup
+      - Private Security Group2
+    InstanceType: t2.micro

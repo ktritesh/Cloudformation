@@ -16,22 +16,32 @@ Metadata:
         Label: 
           default: "Subnet CIDR"
         Parameters:
-          - PublicSubnetCIDR
-          - PrivateSubnetCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
 
 Parameters:
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
     Type: String
     Default: 10.200.0.0/16
-  PublicSubnetCIDR:
-    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
-    Type: String
-    Default: 10.200.0.0/24
-  PrivateSubnetCIDR:
-    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the first public subnet in the first Availability Zone
     Type: String
     Default: 10.200.1.0/24
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the Second public subnet in the first Availability Zone
+    Type: String
+    Default: 10.200.2.0/24
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the first private subnet in the Second Availability Zone
+    Type: String
+    Default: 10.200.3.0/24
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the Second  private subnet in the Second  Availability Zone
+    Type: String
+    Default: 10.200.4.0/24
 
   SSHLocation:
     Description: The IP address range that can be used to access the web server using SSH.
@@ -72,14 +82,13 @@ Parameters:
     MinValue: '1'
     MaxValue: '20'
     ConstraintDescription: must be between 20 and 65536 GiB.
-      
 
-Resources:
+Resources:  
 # Create VPC
   VPC:
-    Type: AWS::EC2::VPC
+    Type: 'AWS::EC2::VPC'
     Properties:
-      CidrBlock: !Ref VpcCIDR
+      CidrBlock: 10.200.0.0/16
       EnableDnsSupport: true
       EnableDnsHostnames: true
       InstanceTenancy: default
@@ -87,13 +96,13 @@ Resources:
         - Key: Name
           Value: VPC-02
 
-# Create Internet Gateway
+# Create Internet Gateway  
   InternetGateway:
-    Type: AWS::EC2::InternetGateway
+    Type: 'AWS::EC2::InternetGateway'
     Properties:
       Tags:
-        - Key: Name
-          Value: VPC-02 Gateway
+      - Key: Name
+        Value: VPC-02 Gateway
 
 # Attach Internet Gateway to VPC
   InternetGatewayAttachment:
@@ -102,17 +111,53 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref VPC
 
-# Create Public Subnet
-  PublicSubnet:
+# Create first Public Subnet 
+  PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
-      AvailabilityZone: !Select [ 0, !GetAZs '' ]
-      CidrBlock: !Ref PublicSubnetCIDR
+      AvailabilityZone: ap-south-1a
+      CidrBlock: 10.200.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Public Subnet1
+
+# Create Second Public Subnet 
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: ap-south-1a
+      CidrBlock: 10.200.2.0/24
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
           Value: Public Subnet2
+
+# Create first Private Subnet 
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: ap-south-1b
+      CidrBlock: 10.200.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet1
+
+# Create second Private Subnet 
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: ap-south-1b
+      CidrBlock: 10.200.4.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Private Subnet2  
 
 # Create Public Route Table
   PublicRouteTable:
@@ -121,34 +166,30 @@ Resources:
       Tags:
         - Key: Name
           Value: Public Route Table2
-      VpcId: !Ref VPC
-
+      VpcId: !Ref VPC     
+      
 # Add a Public Routes to the Internet
   PublicRoute:
     Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
     Properties:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
-      RouteTableId: !Ref PublicRouteTable
-
-# Associate Public Routes with Public Subnet
-  PublicSubnetRouteTableAssociation:
+      RouteTableId: !Ref PublicRouteTable      
+      
+# Associate Public Routes with first Public Subnet
+  PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PublicRouteTable
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnet1   
 
-# Create Private Subnet
-  PrivateSubnet:
-    Type: AWS::EC2::Subnet
+# Associate Public Routes with second Public Subnet
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      VpcId: !Ref VPC
-      AvailabilityZone: !Select [ 1, !GetAZs '' ]
-      CidrBlock: !Ref PrivateSubnetCIDR
-      MapPublicIpOnLaunch: false
-      Tags:
-        - Key: Name
-          Value: Private Subnet2
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2 
 
 # Create Private Route Table
   PrivateRouteTable:
@@ -156,16 +197,38 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: Private Route Table2
+          Value: Private Route Table
       VpcId: !Ref VPC
 
-# Associate Private Route Table with Private Subnet   
-  PrivateSubnetRouteTableAssociation:
+# Associate Private Route Table with first Private Subnet   
+  PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       RouteTableId: !Ref PrivateRouteTable
-      SubnetId: !Ref PrivateSubnet
+      SubnetId: !Ref PrivateSubnet1
 
+# Associate Private Route Table with Second Private Subnet   
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+# Create Nat Gateway     
+  NatGateway:
+    Type: "AWS::EC2::NatGateway"
+    DependsOn: NatPublicIP
+    Properties: 
+      AllocationId: !GetAtt NatPublicIP.AllocationId
+      SubnetId: !Ref PublicSubnet1     
+
+#Create NAT Public IP     
+  NatPublicIP:
+    Type: "AWS::EC2::EIP"
+    DependsOn: VPC
+    Properties:
+      Domain: vpc
+     
 # Create Public Security Group
   PublicSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -185,7 +248,7 @@ Resources:
       Tags:
         - Key: Name
           Value: Public Security Group2
-          
+
 # Create Private Security Group
   PrivateSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -223,8 +286,17 @@ Resources:
       SecurityGroups:
         - Ref: PublicSecurityGroup
       Subnets: 
-        - Ref: PublicSubnet
-        - Ref: PrivateSubnet
+        - !Ref PublicSubnet1
+        - !Ref PrivateSubnet1
+
+# Create Public Launch Configuration
+  PublicLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: ami-0de8fac4ababecf19
+      SecurityGroups:
+      - Ref: PublicSecurityGroup
+      InstanceType: t2.micro
 
 #Create a Public Listener on Port 80
   PublicListener:
@@ -270,8 +342,10 @@ Resources:
       SecurityGroups:
         - Ref: PrivateSecurityGroup
       Subnets: 
-        - Ref: PublicSubnet
-        - Ref: PrivateSubnet
+        - !Ref PublicSubnet2
+        - !Ref PrivateSubnet2
+        
+        
 
 #Create a Private Listener on Port 80
   PrivateListener:
@@ -325,13 +399,18 @@ Resources:
       MaxSize: 5
       DesiredCapacity: 1
       LaunchConfigurationName: !Ref PublicLaunchConfiguration
-      AvailabilityZones: 
-        - !Select [ 0, !GetAZs '' ]
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
       TargetGroupARNs:
       - !Ref PublicTargetGroup
+      Tags:
+        - Key: Name
+          Value: Public AutoScaling Group
+          PropagateAtLaunch: True
 
-# Create Simple Scaling Policy for Public Auto Scaling Group
-  PublicSimpleScalingPolicy: 
+# Create Simple Scaling Up Policy for Public Auto Scaling Group
+  PublicSimpleScalingUpPolicy: 
     Type: AWS::AutoScaling::ScalingPolicy
     Properties: 
       AdjustmentType: ChangeInCapacity
@@ -340,6 +419,17 @@ Resources:
       AutoScalingGroupName: 
         Ref: PublicAutoScalingGroup
       ScalingAdjustment: 1
+
+# Create Simple Scaling Down Policy for Public Auto Scaling Group
+  PublicSimpleScalingDownPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PublicAutoScalingGroup
+      ScalingAdjustment: -1
 
 # Create Private Launch Configuration
   PrivateLaunchConfiguration:
@@ -358,13 +448,14 @@ Resources:
       MaxSize: 5
       DesiredCapacity: 1
       LaunchConfigurationName: !Ref PrivateLaunchConfiguration
-      AvailabilityZones: 
-        - !Select [ 0, !GetAZs '' ]
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
       TargetGroupARNs:
       - !Ref PrivateTargetGroup
 
-# Create Simple Scaling Policy for Private Auto Scaling Group
-  privateSimpleScalingPolicy: 
+# Create Simple Scaling Up Policy for Private Auto Scaling Group
+  privateSimpleScalingUpPolicy: 
     Type: AWS::AutoScaling::ScalingPolicy
     Properties: 
       AdjustmentType: ChangeInCapacity
@@ -374,80 +465,13 @@ Resources:
         Ref: PrivateAutoScalingGroup
       ScalingAdjustment: 1
 
-Outputs:
-# Export VPC ID
-  VPC:
-    Description: VPC ID
-    Export:
-      Name: !Sub ${AWS::StackName}-VPC
-    Value: !Ref VPC
-
-# Export Public Subnet 
-  PublicSubnet:
-    Description: Public Subnet ID
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSubnet
-    Value: !Ref PublicSubnet
-
-# Export Private Subnet
-  PrivateSubnet:
-    Description: Private Subnet ID
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSubnet
-    Value: !Ref PrivateSubnet
-
-# Export Public Security Group ID
-  PublicSecurityGroup:
-    Description: Public Security Group ID
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicSecurityGroup
-    Value: !Ref PublicSecurityGroup
-
-# Export Private Security Group ID
-  PublicSecurityGroup:
-    Description: Private Security Group ID
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateSecurityGroup
-    Value: !Ref PrivateSecurityGroup
-
-# Export Public Target Group
-  PublicTargetGroup:
-    Description: Public target group
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicTargetGroup
-    Value: !Ref PublicTargetGroup
-
-# Export Public Load Balancer Dns Name
-  PublicLoadBalancerDnsName:
-    Description: Public Load Balancer DNS Name
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicLoadBalancerDnsName
-    Value: !GetAtt PublicLoadBalancer.DNSName
-
-# Export Public Load Balancer Zone ID
-  PublicLoadBalancerZoneID:
-    Description: Public Load Balancer Canonical Hosted Zone ID
-    Export:
-      Name: !Sub ${AWS::StackName}-PublicLoadBalancerZoneID
-    Value: !GetAtt PublicLoadBalancer.CanonicalHostedZoneID
-
-# Export Private Target Group
-  PrivateTargetGroup:
-    Description: Private target group
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateTargetGroup
-    Value: !Ref PrivateTargetGroup
-
-# Export Private Load Balancer Dns Name
-  PrivateLoadBalancerDnsName:
-    Description: Private Load Balancer DNS Name
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateLoadBalancerDnsName
-    Value: !GetAtt PrivateLoadBalancer.DNSName
-
-# Export Private Load Balancer Zone ID
-  PrivateLoadBalancerZoneID:
-    Description: Private Load Balancer Canonical Hosted Zone ID
-    Export:
-      Name: !Sub ${AWS::StackName}-PrivateLoadBalancerZoneID
-    Value: !GetAtt PrivateLoadBalancer.CanonicalHostedZoneID
+# Create Simple Scaling Down Policy for Private Auto Scaling Group
+  privateSimpleScalingDownPolicy: 
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties: 
+      AdjustmentType: ChangeInCapacity
+      PolicyType: "SimpleScaling"
+      Cooldown: 300
+      AutoScalingGroupName: 
+        Ref: PrivateAutoScalingGroup
+      ScalingAdjustment: -1      

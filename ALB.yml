@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template create an Application Load Balancer
+
+Metadata:
+  AWS::CloudFormation::Interface: 
+    ParameterGroups:
+        Label: 
+          default: "Export VPC Stack Name"
+        Parameters:
+          - ExportVpcStackName
+
+Parameters:
+  ExportVpcStackName:
+    Description: The name of the vpc stack that exports values
+    Type: String
+
+Resources:
+#Create an Public Load Balancer
+  PublicLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PublicLoadBalancer
+      SecurityGroups:
+        - Fn::ImportValue: !Sub ${ExportVpcStackName}-PublicSecurityGroup
+      Subnets: 
+        - Fn::ImportValue: !Sub ${ExportVpcStackName}-PublicSubnet
+        - Fn::ImportValue: !Sub ${ExportVpcStackName}-PrivateSubnet
+
+#Create a Public Listener on Port 80
+  PublicListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref PublicLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+# Create a Public Target Group
+  PublicTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: PublicTargetGroup
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Fn::ImportValue: !Sub ${ExportVpcStackName}-VPC
+
+#Create an Private Load Balancer
+  PrivateLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: PrivateLoadBalancer
+      SecurityGroups:
+        - Fn::ImportValue: !Sub ${ExportVpcStackName}-PrivateSecurityGroup
+      Subnets: 
+        - Fn::ImportValue: !Sub ${ExportVpcStackName}-PublicSubnet
+        - Fn::ImportValue: !Sub ${ExportVpcStackName}-PrivateSubnet
+
+#Create a Private Listener on Port 80
+  PrivateListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref PrivateLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+# Create a Private Target Group
+  PrivateTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: PrivateTargetGroup
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId:
+        Fn::ImportValue: !Sub ${ExportVpcStackName}-VPC
+
+Outputs:
+# Export Public Target Group
+  PublicTargetGroup:
+    Description: Public target group
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicTargetGroup
+    Value: !Ref PublicTargetGroup
+
+# Export Public Load Balancer Dns Name
+  PublicLoadBalancerDnsName:
+    Description: Public Load Balancer DNS Name
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicLoadBalancerDnsName
+    Value: !GetAtt PublicLoadBalancer.DNSName
+
+# Export Public Load Balancer Zone ID
+  PublicLoadBalancerZoneID:
+    Description: Public Load Balancer Canonical Hosted Zone ID
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicLoadBalancerZoneID
+    Value: !GetAtt PublicLoadBalancer.CanonicalHostedZoneID
+
+# Export Private Target Group
+  PrivateTargetGroup:
+    Description: Private target group
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateTargetGroup
+    Value: !Ref PrivateTargetGroup
+
+# Export Private Load Balancer Dns Name
+  PrivateLoadBalancerDnsName:
+    Description: Private Load Balancer DNS Name
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateLoadBalancerDnsName
+    Value: !GetAtt PrivateLoadBalancer.DNSName
+
+# Export Private Load Balancer Zone ID
+  PrivateLoadBalancerZoneID:
+    Description: Private Load Balancer Canonical Hosted Zone ID
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateLoadBalancerZoneID
+    Value: !GetAtt PrivateLoadBalancer.CanonicalHostedZoneID

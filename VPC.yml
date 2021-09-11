@@ -1,8 +1,24 @@
 AWSTemplateFormatVersion: 2010-09-09
 
 Description:  This template deploys a VPC, with a public and private subnets spread
-  across two Availability Zones and defines a single Amazon EC2 instance in both AZs with a security group that allows SSH traffic.
-   
+  across two Availability Zones and defines EC2 instance with a security group that allows SSH traffic.
+
+# The following metadata is used to group the parameters
+Metadata:
+  AWS::CloudFormation::Interface: 
+    ParameterGroups:
+      - 
+        Label: 
+          default: "VPC CIDR"
+        Parameters: 
+          - VpcCIDR
+      - 
+        Label: 
+          default: "Subnet CIDR"
+        Parameters:
+          - PublicSubnetCIDR
+          - PrivateSubnetCIDR
+
 Parameters:
   VpcCIDR:
     Description: Please enter the IP range (CIDR notation) for this VPC
@@ -16,6 +32,7 @@ Parameters:
     Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
     Type: String
     Default: 10.200.1.0/24
+
   SSHLocation:
     Description: The IP address range that can be used to access the web server using SSH.
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
@@ -24,7 +41,39 @@ Parameters:
     MaxLength: '18'
     MinLength: '9'
     Type: String
+  
+  DBInstanceID:
+    Default: mysqldbinstance
+    Description: My database instance
+    Type: String
+    MinLength: '1'
+    MaxLength: '63'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: >-
+      Must begin with a letter and must not end with a hyphen or contain two
+      consecutive hyphens.
+  DBName:
+    Default: mysqldb1
+    Description: My Sqldb RDS
+    Type: String
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters.  
+  DBInstanceClass:
+    Default: db.t2.micro
+    Description: DB instance class
+    Type: String
+    ConstraintDescription: Must select a valid DB instance type.
+  DBAllocatedStorage:
+    Default: '20'
+    Description: The size of the database (GiB)
+    Type: Number
+    MinValue: '1'
+    MaxValue: '20'
+    ConstraintDescription: must be between 20 and 65536 GiB.
       
+
 Resources:
 # Create VPC
   VPC:
@@ -36,7 +85,7 @@ Resources:
       InstanceTenancy: default
       Tags:
         - Key: Name
-          Value: VPC-01
+          Value: VPC-02
 
 # Create Internet Gateway
   InternetGateway:
@@ -44,7 +93,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: VPC-01 Gateway
+          Value: VPC-02 Gateway
 
 # Attach Internet Gateway to VPC
   InternetGatewayAttachment:
@@ -63,7 +112,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: Public Subnet
+          Value: Public Subnet2
 
 # Create Public Route Table
   PublicRouteTable:
@@ -71,10 +120,10 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: Public Route Table
+          Value: Public Route Table2
       VpcId: !Ref VPC
 
-# Add a Public Route to the Route Table
+# Add a Public Routes to the Internet
   PublicRoute:
     Type: AWS::EC2::Route
     Properties:
@@ -82,7 +131,7 @@ Resources:
       GatewayId: !Ref InternetGateway
       RouteTableId: !Ref PublicRouteTable
 
-# Associate Public Subnet with Public Route Table
+# Associate Public Routes with Public Subnet
   PublicSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -99,7 +148,7 @@ Resources:
       MapPublicIpOnLaunch: false
       Tags:
         - Key: Name
-          Value: Private Subnet
+          Value: Private Subnet2
 
 # Create Private Route Table
   PrivateRouteTable:
@@ -107,10 +156,10 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: Private Route Table
+          Value: Private Route Table2
       VpcId: !Ref VPC
 
-# Associate Private Subnet with Private Route Table
+# Associate Private Route Table with Private Subnet   
   PrivateSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -135,13 +184,13 @@ Resources:
         CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
-          Value: Public Security Group
+          Value: Public Security Group2
           
 # Create Private Security Group
   PrivateSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Enable HTTP/SSH/Custom TCP on port 80/22/All/8000
+      GroupDescription: Enable HTTP/SSH/ICMP/Custom TCP on port 80/22/All/8000
       VpcId:
         Ref: VPC
       SecurityGroupIngress:
@@ -153,10 +202,113 @@ Resources:
         FromPort: 22
         ToPort: 22
         CidrIp: 10.200.0.0/24
+      - IpProtocol: icmp
+        FromPort: -1
+        ToPort: -1
+        CidrIp: 10.200.0.0/24
       - IpProtocol: tCP
         FromPort: 8000
         ToPort: 8000
         CidrIp: 10.200.0.0/24
       Tags:
         - Key: Name
-          Value: Private Security Group
+          Value: Private Security Group2
+
+# Create Security Group For RDS
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable TCP on port 3306
+      VpcId:
+        Ref: VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        CidrIp: 10.200.0.0/16
+      - IpProtocol: tcp
+        FromPort: 3306
+        ToPort: 3306
+        CidrIp: 10.200.1.0/24
+      Tags:
+        - Key: Name
+          Value: RDS Security Group2   
+
+# Create RDS MySqlDb in Private Subnet
+  MyDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceID
+      DBName: !Ref DBName
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DBSecurityGroups: 
+        - Ref: RDSSecurityGroup
+      Engine: MySQL
+      EngineVersion: 8.0.23
+      StorageType: gp2
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      MasterUsername: admin
+      MasterUserPassword: admin123
+      Tags:
+        - Key: Name
+          Value: MySql RDS
+      VPCSecurityGroups: 
+        - Ref: PrivateSecurityGroup
+  
+
+# Create Private Subnet group for MySqldb RDS      
+  DBSubnetGroup: 
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: Subnet group for mysqldb RDS
+      SubnetIds: 
+        - !Ref PrivateSubnet
+        - !Ref PublicSubnet
+      Tags: 
+        - Key: Name
+          Value: RDS Subnet Group2
+
+Outputs:
+# Export VPC ID
+  VPC:
+    Description: VPC ID
+    Export:
+      Name: !Sub ${AWS::StackName}-VPC
+    Value: !Ref VPC
+
+# Export Public Subnet 
+  PublicSubnet:
+    Description: Public Subnet ID
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnet
+    Value: !Ref PublicSubnet
+
+# Export Private Subnet
+  PrivateSubnet:
+    Description: Private Subnet ID
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnet
+    Value: !Ref PrivateSubnet
+
+# Export Public Security Group ID
+  PublicSecurityGroup:
+    Description: Public Security Group ID
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSecurityGroup
+    Value: !Ref PublicSecurityGroup
+
+# Export Private Security Group ID
+  PublicSecurityGroup:
+    Description: Private Security Group ID
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSecurityGroup
+    Value: !Ref PrivateSecurityGroup
+
+# Export RDS Security Group ID
+  RDSSecurityGroup:
+    Description: RDS Security Group ID
+    Export:
+      Name: !Sub ${AWS::StackName}-RDSSecurityGroup
+    Value: !Ref RDSSecurityGroup
